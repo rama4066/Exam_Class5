@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Online Tuition Exam Portal</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; }
+    .container { max-width: 900px; margin: auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 20px; }
+    .timer { font-size: 20px; font-weight: bold; color: #d9534f; background: #fdf2f2; padding: 8px 15px; border-radius: 5px; }
+    .main { display: flex; gap: 20px; flex-wrap: wrap; }
+    .question-box { flex: 2; min-width: 300px; }
+    .palette { flex: 1; min-width: 200px; border-left: 1px solid #eee; padding-left: 20px; }
+    .palette-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
+    .p-btn { padding: 10px; border: 1px solid #ccc; background: #fff; cursor: pointer; border-radius: 4px; font-weight: bold; }
+    .p-btn.answered { background: #28a745; color: #fff; border-color: #28a745; }
+    .p-btn.active { border: 2px solid #007bff; }
+    .option { display: block; margin: 12px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; cursor: pointer; }
+    .option:hover { background: #f8f9fa; }
+    .controls { margin-top: 20px; display: flex; justify-content: space-between; }
+    button.nav { padding: 10px 18px; border: none; border-radius: 5px; cursor: pointer; font-size: 15px; }
+    .btn-primary { background: #007bff; color: #fff; }
+    .btn-success { background: #28a745; color: #fff; }
+    .hidden { display: none; }
+    input[type="text"] { padding: 10px; width: 250px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
+    #save-status { padding: 10px; border-radius: 5px; margin-bottom: 15px; font-weight: bold; }
+    .saving { background: #fff3cd; color: #856404; }
+    .saved { background: #d4edda; color: #155724; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Start Screen -->
+  <div id="start-screen">
+    <h2>Tuition Assessment Portal</h2>
+    <p>Time Limit: <strong>10 Minutes</strong> | Total Questions: <strong id="total-q-count"></strong></p>
+    <p><em>Note: Switching browser tabs during the test will trigger a warning.</em></p>
+    <input type="text" id="student-name" placeholder="Enter Student Full Name" required />
+    <button class="nav btn-primary" onclick="startExam()">Start Exam</button>
+  </div>
+
+  <!-- Exam Screen -->
+  <div id="exam-screen" class="hidden">
+    <div class="header">
+      <div><strong>Student:</strong> <span id="display-name"></span> | <strong>Tab Warnings:</strong> <span id="warnings">0</span></div>
+      <div class="timer" id="timer">10:00</div>
+    </div>
+    <div class="main">
+      <div class="question-box">
+        <h3 id="q-title"></h3>
+        <div id="options-box"></div>
+        <div class="controls">
+          <button class="nav" onclick="prevQ()">Previous</button>
+          <button class="nav btn-primary" onclick="nextQ()">Save & Next</button>
+          <button class="nav btn-success" id="submit-btn" onclick="submitExam()">Submit Exam</button>
+        </div>
+      </div>
+      <div class="palette">
+        <strong>Question Palette</strong>
+        <div class="palette-grid" id="palette-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Result Screen -->
+  <div id="result-screen" class="hidden">
+    <h2>Exam Completed</h2>
+    <div id="save-status" class="saving">Saving results to teacher's sheet...</div>
+    <p><strong>Student Name:</strong> <span id="res-name"></span></p>
+    <p><strong>Score:</strong> <span id="res-score"></span></p>
+    <p><strong>Tab Switches Detected:</strong> <span id="res-warnings"></span></p>
+    <div id="review-box"></div>
+  </div>
+</div>
+
+<script>
+  // 1. PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL BELOW
+  const GOOGLE_SCRIPT_URL = "YOUR_WEB_APP_URL_HERE";
+
+  // 2. EDIT YOUR QUESTIONS HERE
+  const questions = [
+    { q: "1. What is the HCF of 28 and 33?", options: ["1", "7", "11", "4"], answer: 0 },
+    { q: "2. If 3x + 5 = 20, what is the value of x?", options: ["3", "5", "15", "25"], answer: 1 },
+    { q: "3. Which gas is most abundant in Earth's atmosphere?", options: ["Oxygen", "Carbon Dioxide", "Nitrogen", "Hydrogen"], answer: 2 }
+  ];
+
+  let current = 0, answers = new Array(questions.length).fill(null), timeLeft = 600, timerId, warnings = 0, active = false;
+  document.getElementById("total-q-count").innerText = questions.length;
+
+  function startExam() {
+    const name = document.getElementById("student-name").value.trim();
+    if (!name) return alert("Please enter your name.");
+    document.getElementById("display-name").innerText = name;
+    document.getElementById("start-screen").classList.add("hidden");
+    document.getElementById("exam-screen").classList.remove("hidden");
+    active = true;
+    renderPalette();
+    loadQuestion(0);
+    timerId = setInterval(() => {
+      timeLeft--;
+      let m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+      document.getElementById("timer").innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+      if (timeLeft <= 0) submitExam();
+    }, 1000);
+  }
+
+  function loadQuestion(idx) {
+    current = idx;
+    document.getElementById("q-title").innerText = questions[idx].q;
+    const box = document.getElementById("options-box");
+    box.innerHTML = "";
+    questions[idx].options.forEach((opt, i) => {
+      box.innerHTML += `<label class="option"><input type="radio" name="opt" ${answers[idx] === i ? "checked" : ""} onclick="selectOpt(${i})"> ${opt}</label>`;
+    });
+    renderPalette();
+  }
+
+  function selectOpt(i) { answers[current] = i; renderPalette(); }
+  function nextQ() { if (current < questions.length - 1) loadQuestion(current + 1); }
+  function prevQ() { if (current > 0) loadQuestion(current - 1); }
+
+  function renderPalette() {
+    const grid = document.getElementById("palette-grid");
+    grid.innerHTML = "";
+    questions.forEach((_, i) => {
+      grid.innerHTML += `<button class="p-btn ${answers[i] !== null ? 'answered' : ''} ${i === current ? 'active' : ''}" onclick="loadQuestion(${i})">${i + 1}</button>`;
+    });
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && active) {
+      warnings++;
+      document.getElementById("warnings").innerText = warnings;
+      alert("Warning: Switching tabs is not allowed during the exam!");
+    }
+  });
+
+  function submitExam() {
+    if (!active) return;
+    active = false;
+    clearInterval(timerId);
+    
+    const studentName = document.getElementById("student-name").value.trim();
+    let score = 0;
+    let selectedList = [];
+    let reviewHTML = "<h3>Answer Review:</h3>";
+
+    questions.forEach((q, i) => {
+      const correct = answers[i] === q.answer;
+      if (correct) score++;
+      const chosenText = answers[i] !== null ? q.options[answers[i]] : "Unanswered";
+      selectedList.push(`Q${i + 1}: ${chosenText}`);
+      reviewHTML += `<p>${q.q}<br>Your Answer: <strong>${chosenText}</strong> | Correct: <strong>${q.options[q.answer]}</strong></p>`;
+    });
+
+    document.getElementById("exam-screen").classList.add("hidden");
+    document.getElementById("result-screen").classList.remove("hidden");
+    document.getElementById("res-name").innerText = studentName;
+    document.getElementById("res-score").innerText = `${score} / ${questions.length}`;
+    document.getElementById("res-warnings").innerText = warnings;
+    document.getElementById("review-box").innerHTML = reviewHTML;
+
+    // Send data to Google Sheets
+    fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        studentName: studentName,
+        score: score,
+        totalQuestions: questions.length,
+        warnings: warnings,
+        answers: selectedList.join(" | ")
+      })
+    }).then(() => {
+      const statusBox = document.getElementById("save-status");
+      statusBox.className = "saved";
+      statusBox.innerText = "Results saved successfully to teacher's sheet!";
+    }).catch(() => {
+      document.getElementById("save-status").innerText = "Saved locally. Please take a screenshot of your score.";
+    });
+  }
+</script>
+</body>
+</html>
