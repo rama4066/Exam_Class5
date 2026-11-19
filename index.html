@@ -344,7 +344,7 @@
     return svg;
   }
 
-  let current = 0, answers = new Array(questions.length).fill(null), timeLeft = 1800, timerId, warnings = 0, active = false;
+  let current = 0, answers = new Array(questions.length).fill(null), timeLeft = 3600, timerId, warnings = 0, active = false;
   document.getElementById("total-q-count").innerText = questions.length;
 
   function startExam() {
